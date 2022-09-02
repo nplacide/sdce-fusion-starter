@@ -48,7 +48,27 @@ class Sensor:
         # otherwise False.
         ############
 
-        return True
+        #create a 4 x 1 matrix filled with ones to contain the coordinates
+        pos_veh = np.ones((4, 1))
+		
+		# assign x,y,z coordinates of object x to array. 
+        # the last element in the array remains unchanged and is equal to 1
+        pos_veh[0:3] = x[0:3]
+		
+		# transform from vehicle to sensor coordinates
+		# a point represented by a given set of homogeneous coordinates is unchanged if the coordinates are multiplied by a common factor		
+        pos_sens = self.veh_to_sens*pos_veh
+		#default value for visibility
+        visibility = False
+        # exclude negative x-range to avoid division by 0
+        if pos_sens[0] > 0: 
+			# calculate angle between object and x-axis
+            alpha = np.arctan(pos_sens[1]/pos_sens[0]) 
+            # returned alpha always between [-pi/2, pi/2] hence no need to normalize
+            if alpha > self.fov[0] and alpha < self.fov[1]:
+                visibility = True
+        
+        return visibility
         
         ############
         # END student code
@@ -57,9 +77,16 @@ class Sensor:
     def get_hx(self, x):    
         # calculate nonlinear measurement expectation value h(x)   
         if self.name == 'lidar':
-            pos_veh = np.ones((4, 1)) # homogeneous coordinates
-            pos_veh[0:3] = x[0:3] 
-            pos_sens = self.veh_to_sens*pos_veh # transform from vehicle to lidar coordinates
+            #create a 4 x 1 matrix filled with ones to contain the coordinates
+            pos_veh = np.ones((4, 1))
+		
+		    #assign x,y,z coordinates of object x to array. The last element remain unchanged and is equal to 1
+            pos_veh[0:3] = x[0:3]
+		
+		    # transform from vehicle to lidar coordinates
+		    # a point represented by a given set of homogeneous coordinates is unchanged if the coordinates are multiplied by a common factor		
+            pos_sens = self.veh_to_sens*pos_veh
+            
             return pos_sens[0:3]
         elif self.name == 'camera':
             
@@ -71,8 +98,27 @@ class Sensor:
             # - return h(x)
             ############
 
-            pass
-        
+            #create a 4 x 1 matrix filled with ones to contain the coordinates
+            pos_veh = np.ones((4, 1))
+            
+            #assign x,y,z coordinates of object x to array. The last element remain unchanged and is equal to 1
+            pos_veh[0:3] = x[0:3]
+            
+            # transform from vehicle to sensor coordinates
+            # a point represented by a given set of homogeneous coordinates is unchanged if the coordinates are multiplied by a common factor		
+            pos_sens = self.veh_to_sens*pos_veh
+
+            # create 2 x 1 matrix filled with ones to hold coordinates for nonlinear camera measurement function h   
+            hx = np.zeros((2,1))
+            # check if dividing by zero
+            if pos_sens[0]==0:
+                raise NameError('Division by 0')
+            else:
+                # project from camera to image coordinates
+                hx[0] = self.c_i - self.f_i*pos_sens[1]/pos_sens[0] 
+                hx[1] = self.c_j - self.f_j*pos_sens[2]/pos_sens[0]
+                return hx
+            
             ############
             # END student code
             ############ 
@@ -85,9 +131,9 @@ class Sensor:
         if self.name == 'lidar':
             H[0:3, 0:3] = R
         elif self.name == 'camera':
-            # check and print error message if dividing by zero
+            # check for division by zero
             if R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0] == 0: 
-                raise NameError('Jacobian not defined for this x!')
+                raise NameError('Division by 0')
             else:
                 H[0,0] = self.f_i * (-R[1,0] / (R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])
                                     + R[0,0] * (R[1,0]*x[0] + R[1,1]*x[1] + R[1,2]*x[2] + T[1]) \
@@ -132,8 +178,6 @@ class Measurement:
     def __init__(self, num_frame, z, sensor):
         # create measurement object
         self.t = (num_frame - 1) * params.dt # time
-        self.sensor = sensor # sensor that generated this measurement
-        
         if sensor.name == 'lidar':
             sigma_lidar_x = params.sigma_lidar_x # load params
             sigma_lidar_y = params.sigma_lidar_y
@@ -142,6 +186,7 @@ class Measurement:
             self.z[0] = z[0]
             self.z[1] = z[1]
             self.z[2] = z[2]
+            self.sensor = sensor # sensor that generated this measurement
             self.R = np.matrix([[sigma_lidar_x**2, 0, 0], # measurement noise covariance matrix
                                 [0, sigma_lidar_y**2, 0], 
                                 [0, 0, sigma_lidar_z**2]])
@@ -153,10 +198,20 @@ class Measurement:
         elif sensor.name == 'camera':
             
             ############
-            # TODO Step 4: initialize camera measurement including z and R 
+            # TODO Step 4: initialize camera measurement including z, R, and sensor 
             ############
-
-            pass
+            #create matrix of size sensor.dim_meas x 1 filled with zeros
+            self.z = np.zeros((sensor.dim_meas, 1))
+            
+            # assign sensor measurements to matrix
+            self.z[0] = z[0]
+            self.z[1] = z[1]
+            
+            #initialize sensor object
+            self.sensor = sensor
+            
+            # initialize R
+            self.R = np.matrix([[params.sigma_cam_i**2,0.0], [0.0, params.sigma_cam_j**2]])
         
             ############
             # END student code

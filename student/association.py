@@ -39,16 +39,43 @@ class Association:
         ############
         
         # the following only works for at most one track and one measurement
+        '''
         self.association_matrix = np.matrix([]) # reset matrix
         self.unassigned_tracks = [] # reset lists
         self.unassigned_meas = []
-        
+
         if len(meas_list) > 0:
             self.unassigned_meas = [0]
         if len(track_list) > 0:
             self.unassigned_tracks = [0]
         if len(meas_list) > 0 and len(track_list) > 0: 
             self.association_matrix = np.matrix([[0]])
+        '''
+        # Multi tracks and multi measurements implementation
+        # Get the number of unassigned tracks
+        N = len(track_list)
+        #Get the number of unassigned measurement
+        M = len(meas_list)
+        #Create a list with a range N for the unassigned tracks
+        self.unassigned_tracks = list(range(N))
+        #Same thing for the unassigned measurements
+        self.unassigned_meas = list(range(M))
+
+        # initialize the association matrix with infinity values.
+        #Anything not replaced remains infinity
+        self.association_matrix = np.inf*np.ones((N,M)) 
+
+        # loop over all tracks and measurements to set up association matrix
+        for i in range(N): 
+            track = track_list[i]
+            for j in range(M):
+                meas = meas_list[j]
+                #Use MHD()function to implement the Mahalanobis distance between track and measurement
+                mhd_dist = self.MHD(track, meas, KF)
+                #Use the gating() function to check if measurement lies inside track's gate
+                if self.gating(mhd_dist, meas.sensor):
+                    #mhd_dist inside track gate -> replace infinity value in association matrix
+                    self.association_matrix[i,j] = mhd_dist
         
         ############
         # END student code
@@ -64,6 +91,7 @@ class Association:
         ############
 
         # the following only works for at most one track and one measurement
+        '''
         update_track = 0
         update_meas = 0
         
@@ -71,6 +99,30 @@ class Association:
         self.unassigned_tracks.remove(update_track) 
         self.unassigned_meas.remove(update_meas)
         self.association_matrix = np.matrix([])
+        '''
+        A = self.association_matrix
+		#return np.nan (NaN == Not a Number) where we find infinity in the association matrix
+        if np.min(A) == np.inf:
+            return np.nan, np.nan
+
+        # We need to find the minimum entries in the association matrix
+		# We will need to convert our flat array of flat indices into a tuple of coordinate array
+		# We use numpy unravel_index to do that
+        itrack, imeas = np.unravel_index(np.argmin(A, axis=None), A.shape) 
+
+        # We delete the corresponding row and column from the matrix
+        A = np.delete(A, itrack, 0) 
+        A = np.delete(A, imeas, 1)
+        self.association_matrix = A
+
+        # update the list of unassigned measurements and unassigned tracks
+        update_track = self.unassigned_tracks[itrack] 
+        update_meas = self.unassigned_meas[imeas]
+
+        # remove corresponding track and measurement from unassigned_tracks and unassigned_meas
+        self.unassigned_tracks.remove(update_track) 
+        self.unassigned_meas.remove(update_meas)
+        
             
         ############
         # END student code
@@ -81,8 +133,11 @@ class Association:
         ############
         # TODO Step 3: return True if measurement lies inside gate, otherwise False
         ############
-        
-        pass    
+        #To get the chi square critical value, we need the significance level q and the degrees of freedom df
+        q = params.gating_threshold
+        df = sensor.dim_meas
+        #determine if MHD lies inside gate
+        return MHD < chi2.ppf(q, df)    
         
         ############
         # END student code
@@ -93,7 +148,12 @@ class Association:
         # TODO Step 3: calculate and return Mahalanobis distance
         ############
         
-        pass
+        # calculate Mahalanobis distance
+        H = meas.sensor.get_H(track.x) 
+        gamma = KF.gamma(track, meas)
+        # Apply the Mahalanobis distance formula
+        MHD = gamma.transpose() * np.linalg.inv(KF.S(track,meas,H)) * gamma 
+        return MHD
         
         ############
         # END student code

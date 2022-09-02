@@ -249,5 +249,4 @@ def detect_objects(input_bev_maps, model, configs):
     #######
     ####### ID_S3_EX2 START #######   
     
-    return objects    
-
+    return objects
