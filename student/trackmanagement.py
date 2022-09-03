@@ -34,7 +34,8 @@ class Track:
         # unassigned measurement transformed from sensor to vehicle coordinates
         # - initialize track state and track score with appropriate values
         ############
-
+        '''
+        #Comment out fixed track
         self.x = np.matrix([[49.53980697],
                         [ 3.41006279],
                         [ 0.91790581],
@@ -49,6 +50,42 @@ class Track:
                         [0.0e+00, 0.0e+00, 0.0e+00, 0.0e+00, 0.0e+00, 2.5e+01]])
         self.state = 'confirmed'
         self.score = 0
+        '''        
+        #Initialize track.x and track.P based on the input measurements
+    
+        self.id = id
+        
+        # transform from sensor coordinates to homogeneous vehicle coordinates
+        #We need to combine translation and rotation into 1 4x4 transformation matrix.
+        #To do that, we need to start a 4x4 array of 1s that will be used for our combined rotation and transformation matrix
+        trans_vector = np.ones((4, 1))
+        #replace the placeholder 1s in the transformation matrix with the actual x,y,z measurements of the sensor
+        #we use the measurement vector z in homogeneous coordinate by adding the fourth component (1) hence the need to create a 4x4 matrix of 1s.
+        trans_vector[0:3] = meas.z[0:3] 
+        #multiplication with the translation vector leads to the position of the vehicle in homogeneous coordinates
+        pos_veh = meas.sensor.sens_to_veh*trans_vector
+        
+        # save initial measurement state
+        self.x = np.zeros((6,1))
+        self.x[0:3] = pos_veh[0:3]
+
+        # position estimation error covariance
+        M_rot = meas.sensor.sens_to_veh[0:3, 0:3]
+        P_pos = M_rot * meas.R * np.transpose(M_rot)
+
+        # velocity estimation error covariance
+        P_vel = np.matrix([[params.sigma_p44**2, 0, 0],
+                           [0, params.sigma_p55**2, 0],
+                           [0, 0, params.sigma_p66**2]])
+
+
+        # overall covariance
+        self.P = np.zeros((6, 6))
+        self.P[0:3, 0:3] = P_pos
+        self.P[3:6, 3:6] = P_vel
+
+        self.state = 'initialized'
+        self.score = 1/params.window
         
         ############
         # END student code
@@ -106,10 +143,27 @@ class Trackmanagement:
             # check visibility    
             if meas_list: # if not empty
                 if meas_list[0].sensor.in_fov(track.x):
-                    # your code goes here
-                    pass 
+                    track.score -= 1./params.window 
 
-        # delete old tracks   
+        # delete old tracks 
+        for track in self.track_list:
+            #if the track is confirmed
+            if track.state == 'confirmed':
+                # if the track score gets below the delete_threshold, delete the track
+                if track.score < params.delete_threshold:
+                    self.delete_track(track)
+                #Also delete the track if P is too big
+                elif (track.P[0, 0] > params.max_P or track.P[1, 1] > params.max_P):
+                    self.delete_track(track)
+            #if the track status is initialized or tentative but the track never gets confirmed
+            if (track.state == 'initialized' or track.state == 'tentative'): 
+                # if the track score gets very low, delete the track. 
+                # I found the sweet spot to be delete_threshold**4 with a delete_threshold of 0.6
+                if track.score < params.delete_threshold**4: 
+                    self.delete_track(track)
+                #Also delete the track if P is too big
+                elif (track.P[0, 0] > params.max_P or track.P[1, 1] > params.max_P):
+                    self.delete_track(track)
 
         ############
         # END student code
@@ -140,7 +194,11 @@ class Trackmanagement:
         # - set track state to 'tentative' or 'confirmed'
         ############
 
-        pass
+        track.score += 1/params.window
+        if track.score >= params.confirmed_threshold:
+            track.state = "confirmed"
+        else:
+            track.state = "tentative"
         
         ############
         # END student code
